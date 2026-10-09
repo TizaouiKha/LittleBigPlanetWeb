@@ -20,10 +20,21 @@ const TYPES = {
 };
 
 const server = http.createServer((req, res) => {
-  let pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+  let pathname;
+  try {
+    pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+  } catch {
+    pathname = null;
+  }
+  // URL mal encodée (ex. %E0%A4%A) ou octet nul : sans ce garde-fou, le serveur plantait.
+  if (pathname === null || pathname.includes('\0')) {
+    res.writeHead(400);
+    return res.end();
+  }
   if (pathname.endsWith('/')) pathname += 'index.html';
   const file = path.normalize(path.join(ROOT, pathname));
-  if (!file.startsWith(ROOT)) {
+  // ROOT + séparateur : sinon un dossier voisin comme "public-xxx" passerait le test.
+  if (!file.startsWith(ROOT + path.sep)) {
     res.writeHead(403);
     return res.end();
   }

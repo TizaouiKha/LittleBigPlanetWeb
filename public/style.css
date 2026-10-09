@@ -154,3 +154,59 @@ kbd {
   .stats { grid-template-columns: repeat(2, 1fr); }
   #hint { display: none; }
 }
+
+/* ---------- Multijoueur ---------- */
+#menu { margin-top: 14px; display: grid; gap: 10px; justify-items: center; }
+.menu-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.field { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+#menu input {
+  font: 600 16px 'Fredoka', sans-serif; color: var(--ink);
+  padding: 6px 10px; border-radius: 10px; width: 170px;
+  background: #fff; border: 2px solid var(--ink); outline: none;
+  user-select: text;
+}
+#menu input:focus { box-shadow: 0 0 0 3px var(--gold); }
+#net-code { width: 100px !important; text-align: center; text-transform: uppercase; letter-spacing: 4px; }
+.btn {
+  font: 700 17px 'Fredoka', sans-serif; color: #fff; cursor: pointer;
+  padding: 7px 18px; border-radius: 12px;
+  background: var(--accent); border: 2px solid var(--ink); box-shadow: 0 4px 0 var(--ink);
+  transition: transform 0.1s;
+}
+.btn:hover:not(:disabled) { transform: translateY(-2px) rotate(-1deg); }
+.btn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 2px 0 var(--ink); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+#btn-solo { background: #5fb85a; }
+#btn-join { background: #4d8ad6; }
+#net-status { margin: 0; min-height: 20px; font-size: 15px; font-weight: 600; }
+#net-status.err { color: var(--accent); }
+
+#players {
+  position: absolute; top: 92px; left: 22px;
+  padding: 8px 14px; min-width: 190px; font-size: 16px;
+}
+#players .code { font-size: 13px; opacity: 0.75; margin-bottom: 4px; }
+#players .code b { font-size: 18px; letter-spacing: 3px; opacity: 1; color: var(--accent); }
+#players .row { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+#players .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--ink); flex: none; }
+#players .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
+#players .pts { font-variant-numeric: tabular-nums; }
+
+#feed {
+  position: absolute; left: 22px; bottom: 70px;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+}
+#feed div {
+  background: var(--paper); border: 2px dashed var(--stitch); border-radius: 10px;
+  padding: 3px 12px; font-size: 15px; font-weight: 600;
+  transition: opacity 0.6s;
+}
+#feed div.out { opacity: 0; }
+
+.tag {
+  position: absolute; left: 0; top: 0;
+  padding: 1px 9px; border-radius: 9px; white-space: nowrap;
+  font-size: 14px; font-weight: 700; color: #fff;
+  -webkit-text-stroke: 0.6px var(--ink); text-shadow: 0 1px 0 var(--ink);
+  border: 2px solid var(--ink); will-change: transform;
+}

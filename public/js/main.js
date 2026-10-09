@@ -4,7 +4,13 @@ import { createMaterials, knitTexture, dotTexture } from './textures.js';
 import { Level, LAYER_Z, groupsFor, buildLevel1 } from './level.js';
 import { Sackboy } from './character.js';
 import { Sfx } from './audio.js';
-import { LevelBuilder, recordLevel, parseLevel, ensureEditorMaterials } from './levelFormat.js';
+import {
+  clamp, damp, approach, toLocal, toWorld, overlapsObject, nextCombo, bubblePoints, bubbleReached,
+  formatTime, probeGround,
+} from './utils.js';
+import { Net } from './net.js';
+import { recordLevel, parseLevel } from './levelFormat.js';
+import { LevelBuilder, ensureEditorMaterials } from './levelBuilder.js';
 import { Editor } from './editor.js';
 
 const STEP = 1 / 60;
@@ -15,9 +21,6 @@ const COSTUMES = [0xc9a06a, 0xe0574b, 0x4d8ad6, 0x5fb85a, 0xa874d6, 0xf0c341, 0x
 const EMOTES = ['happy', 'sad', 'angry', 'surprised'];
 
 const $ = (id) => document.getElementById(id);
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const damp = (a, b, l, dt) => a + (b - a) * (1 - Math.exp(-l * dt));
-const approach = (v, t, d) => (v < t ? Math.min(v + d, t) : Math.max(v - d, t));
 
 const loading = $('loading');
 loading.textContent = 'Chargement de la physique…';
@@ -64,15 +67,19 @@ const world = new RAPIER.World({ x: 0, y: GRAVITY });
 world.timestep = STEP;
 const level = new Level(RAPIER, world, scene, mats);
 // Le niveau est décrit en données (levelFormat.js) pour pouvoir être édité, sauvé et rechargé.
-const level1Data = recordLevel(buildLevel1, 'Le Jardin en Carton');
+const level1Data = recordLevel(buildLevel1, 'Le Jardin en Carton', {
+  bubbleLine: Level.prototype.bubbleLine, bubbleArc: Level.prototype.bubbleArc,
+});
 const builder = new LevelBuilder(level);
 builder.load(parseLevel(level1Data).level);
 level.spawn = startPoint();
 
-// Départ : le checkpoint le plus à gauche (activé), sinon le point de départ du niveau.
+// Départ : checkpoints triés de gauche à droite (l'éditeur peut en ajouter n'importe où),
+// le premier est activé ; sans checkpoint, point de départ du niveau.
 function startPoint() {
-  const first = [...level.checkpoints].sort((a, b) => a.x - b.x)[0];
-  if (first) { level.activateCheckpoint(first); first.reached = true; }
+  level.checkpoints.sort((a, b) => a.x - b.x);
+  const first = level.checkpoints[0];
+  if (first) level.activateCheckpoint(first);
   return first ? { x: first.x, y: first.y } : { ...builder.spawn };
 }
 
@@ -153,6 +160,7 @@ let lastCollect = -10;
 let runTime = 0;
 let simTime = 0;
 let got = 0;
+let cpIndex = 0;
 
 // ---------- Entrées clavier / souris / manette ----------
 
@@ -167,6 +175,7 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (editor.active) return editor.onKeyDown(e);
+  if (e.target instanceof HTMLInputElement) return; // saisie du pseudo / du code
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys.add(e.code);
@@ -176,7 +185,7 @@ addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => { keys.clear(); mouseGrab = false; });
 addEventListener('mousedown', (e) => {
   if (editor.active) return;
-  if (state === 'title') return start();
+  if (state === 'title') { if (!e.target.closest?.('#menu')) start(); return; }
   if (e.button === 0) mouseGrab = true;
 });
 addEventListener('mouseup', (e) => { if (e.button === 0) mouseGrab = false; });
@@ -189,7 +198,7 @@ function press(code) {
     return;
   }
   if (state === 'finished') {
-    if (code === 'Enter') restart();
+    if (code === 'Enter') replay();
     return;
   }
   switch (code) {
@@ -234,7 +243,7 @@ function pollPad() {
   if (edge('select')) toggleEditor();
   if (editor.active) { pad = s; return; }
   if (state === 'title' && (edge('jump') || edge('start'))) start();
-  else if (state === 'finished' && (edge('start') || edge('jump'))) restart();
+  else if (state === 'finished' && (edge('start') || edge('jump'))) replay();
   else if (state === 'play') {
     if (edge('jump')) player.jumpBuf = 0.12;
     if (edge('up')) changeLayer(+1);
@@ -261,22 +270,11 @@ function nextCostume() {
 
 // ---------- Actions du joueur ----------
 
-function toLocal(o, p) {
-  const t = o.body.translation(), a = -o.body.rotation();
-  const dx = p.x - t.x, dy = p.y - t.y;
-  return { x: dx * Math.cos(a) - dy * Math.sin(a), y: dx * Math.sin(a) + dy * Math.cos(a) };
-}
-
-function toWorld(o, l) {
-  const t = o.body.translation(), a = o.body.rotation();
-  return { x: t.x + l.x * Math.cos(a) - l.y * Math.sin(a), y: t.y + l.x * Math.sin(a) + l.y * Math.cos(a) };
-}
-
 // Attraper = créer un pivot physique entre la main et le point le plus proche de l'objet.
 function tryGrab(pos) {
   const hand = { x: pos.x + player.facing * 0.6, y: pos.y + 0.05 };
   let best = null, bestD = 0.45;
-  for (const o of level.objects) {
+  for (const o of [...level.objects, ...net.grabTargets()]) {
     if (!o.grabbable || !(o.mask & (1 << player.layer))) continue;
     const l = toLocal(o, hand);
     let cp;
@@ -303,25 +301,6 @@ function release() {
   player.joint = null;
   player.grabbed = null;
   sfx.release();
-}
-
-function overlapsObject(o, cx, cy, hx, hy) {
-  const t = o.body.translation();
-  if (o.kind === 'ball') {
-    const dx = Math.max(Math.abs(t.x - cx) - hx, 0), dy = Math.max(Math.abs(t.y - cy) - hy, 0);
-    return dx * dx + dy * dy < o.r * o.r;
-  }
-  // Test des axes séparateurs entre la boîte du joueur et la boîte (éventuellement penchée) de l'objet
-  const a = o.body.rotation();
-  const c = Math.cos(a), s = Math.sin(a);
-  const ox = o.w / 2, oy = o.h / 2;
-  const axes = [[1, 0], [0, 1], [c, s], [-s, c]];
-  for (const [nx, ny] of axes) {
-    const pr = hx * Math.abs(nx) + hy * Math.abs(ny);
-    const po = ox * Math.abs(c * nx + s * ny) + oy * Math.abs(-s * nx + c * ny);
-    if (Math.abs((t.x - cx) * nx + (t.y - cy) * ny) > pr + po) return false;
-  }
-  return true;
 }
 
 function changeLayer(dir) {
@@ -366,14 +345,7 @@ function playerStep(dt) {
   const groups = groupsFor(1 << player.layer);
 
   // Sonde au sol : 3 rayons sous les pieds
-  let ground = null;
-  if (vel.y < 4) {
-    for (const ox of [-0.3, 0, 0.3]) {
-      const ray = new RAPIER.Ray({ x: pos.x + ox, y: pos.y }, { x: 0, y: -1 });
-      const hit = world.castRay(ray, 0.95, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, groups, player.collider);
-      if (hit && (hit.timeOfImpact ?? hit.toi) < 0.88) { ground = hit.collider.parent(); break; }
-    }
-  }
+  const ground = vel.y < 4 ? probeGround(RAPIER, world, pos, groups, player.collider) : null;
   const wasGrounded = player.grounded;
   player.grounded = !!ground;
   if (player.grounded && !wasGrounded && player.lastVy < -7) {
@@ -430,33 +402,30 @@ function gameplayStep() {
 
   if (pos.y < -14) respawn(true);
 
-  for (const cp of level.checkpoints) {
-    // (reached : sans ça, deux checkpoints franchis se réactivaient l'un l'autre à chaque pas)
-    if (!cp.active && !cp.reached && pos.x > cp.x - 0.5 && Math.abs(pos.y - cp.y) < 6) {
-      cp.reached = true;
-      level.activateCheckpoint(cp);
-      player.respawn = { x: cp.x, y: cp.y };
-      sfx.checkpoint();
-      toast('Checkpoint !');
+  // On n'avance que vers un checkpoint plus loin (sinon les anciens se réactivaient en boucle)
+  level.checkpoints.forEach((cp, i) => {
+    if (i > cpIndex && pos.x > cp.x - 0.5 && Math.abs(pos.y - cp.y) < 6) {
+      setCheckpoint(i);
+      net.checkpoint(i);
     }
-  }
+  });
 
-  for (const b of level.bubbles) {
-    if (b.collected || b.layer !== player.layer) continue;
-    const k = b.big ? 1.3 : 1;
-    const dx = (b.x - pos.x) / (0.8 * k), dy = (b.group.position.y - pos.y) / (1.05 * k);
-    if (dx * dx + dy * dy < 1) collect(b);
-  }
+  level.bubbles.forEach((b, i) => {
+    if (b.collected || b.layer !== player.layer) return;
+    if (bubbleReached(b.x, b.group.position.y, b.big, pos.x, pos.y)) {
+      collect(b);
+      net.bubble(i);
+    }
+  });
 
   if (state === 'play' && pos.x > level.finishX) finish();
 }
 
 function collect(b) {
   b.collected = true;
-  combo = simTime - lastCollect < 0.7 ? combo + 1 : 0;
+  combo = nextCombo(combo, simTime, lastCollect);
   lastCollect = simTime;
-  const mult = 1 + Math.min(Math.floor(combo / 3), 4);
-  const points = (b.big ? 50 : 10) * mult;
+  const { points, mult } = bubblePoints(b.big, combo);
   score += points;
   got++;
   sfx.pop(1 + Math.min(combo, 12) * 0.06);
@@ -468,6 +437,28 @@ function collect(b) {
   el.classList.remove('bump');
   void el.offsetWidth;
   el.classList.add('bump');
+}
+
+// Checkpoint atteint (par moi, ou par un autre joueur : by = son pseudo ; null = silencieux)
+function setCheckpoint(i, by) {
+  const cp = level.checkpoints[i];
+  if (!cp || i <= cpIndex) return;
+  cpIndex = i;
+  level.activateCheckpoint(cp);
+  player.respawn = { x: cp.x, y: cp.y };
+  if (by === null) return;
+  sfx.checkpoint();
+  toast(by ? `Checkpoint ! (${by})` : 'Checkpoint !');
+}
+
+// Bulle ramassée par un autre joueur : elle disparaît ici aussi (sans points)
+function remoteCollect(i, by) {
+  const b = level.bubbles[i];
+  if (!b || b.collected) return;
+  b.collected = true;
+  if (by == null) { b.group.visible = false; return; }
+  sfx.pop(0.8);
+  puffs.spawn(b.x, b.group.position.y, b.group.position.z, { n: 6, colors: [b.gem.material.color.getHex(), 0xffffff], speed: 3, size: 0.22 });
 }
 
 function finish() {
@@ -530,8 +521,6 @@ function toast(text, ms = 1300) {
   toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
-const formatTime = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
-
 function start() {
   if (state !== 'title') return;
   state = 'play';
@@ -559,7 +548,7 @@ function restart() {
   player.prev = { ...sp };
   setLayer(1);
   player.z = LAYER_Z[1];
-  score = 0; got = 0; combo = 0; runTime = 0; lastCollect = -10;
+  score = 0; got = 0; combo = 0; runTime = 0; lastCollect = -10; cpIndex = 0;
   $('score-val').textContent = '0';
   $('timer').textContent = formatTime(0);
   clearTimeout(endTimer);
@@ -568,8 +557,21 @@ function restart() {
   camTarget.set(sp.x + 2, sp.y + 1.4, 0);
 }
 
+// Écran de fin : en solo on rejoue le niveau courant (éventuellement créé) ; en ligne, on recharge.
+function replay() {
+  if (net.online) location.reload();
+  else restart();
+}
+
+// Le mode création est réservé au solo : en ligne, chaque client indexe bulles / checkpoints /
+// objets du même niveau (net.js), une modification locale désynchroniserait la partie.
 function toggleEditor(on = !editor.active) {
   if (state === 'title' || on === editor.active) return;
+  if (on && net.online) {
+    toast('Création indisponible en ligne', 1400);
+    sfx.nope();
+    return;
+  }
   if (on) {
     if (state === 'finished') restart();
     release();
@@ -613,6 +615,7 @@ function frame(now) {
       level.savePrev();
       playerStep(STEP);
       level.update(STEP);
+      net.step(STEP);
       world.step();
       simTime += STEP;
       gameplayStep();
@@ -639,6 +642,7 @@ function frame(now) {
     moving: Math.abs(player.input?.x ?? 0) > 0.1,
     grabbing: !!player.grabbed,
   });
+  net.update(dt);
 
   // Caméra
   let focus = { x: px, y: py };
@@ -663,6 +667,24 @@ function frame(now) {
   renderer.render(scene, camera);
 }
 
-loading.textContent = 'Entrée ou clic pour jouer';
+// Hook de test en lecture seule (utilisé par tests/e2e.mjs).
+window.__lbw = {
+  getState() {
+    const p = player.body.translation();
+    return {
+      state, score, combo, got, totalBubbles: level.bubbles.length, runTime, editing: editor.active,
+      x: p.x, y: p.y, layer: player.layer, grounded: player.grounded, grabbing: !!player.grabbed,
+    };
+  },
+};
+
+// ---------- Réseau (co-op en ligne, voir net.js) ----------
+
+const net = new Net({
+  RAPIER, world, scene, camera, level, player, sack, COSTUMES, EMOTES,
+  hooks: { start, release, toast, getScore: () => score, remoteCollect, setCheckpoint },
+});
+
+loading.textContent = 'Entrée pour jouer en solo, ou choisis ci-dessous';
 loading.classList.add('ready');
 requestAnimationFrame(frame);

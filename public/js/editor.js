@@ -2,8 +2,9 @@
 // L'éditeur ne manipule que les données du niveau (LevelBuilder) ; main.js lui donne la caméra
 // et quelques fonctions (rejouer, toast, sons) via des hooks.
 import * as THREE from 'three';
-import { LAYER_Z, LAYER_DEPTH } from './level.js';
-import { parseLevel, blankLevel, translateItem, triangleGeometry } from './levelFormat.js';
+import { LAYER_Z, ALL, clamp, zSpan as zSpanMask } from './utils.js';
+import { parseLevel, blankLevel, translateItem, serializeLevel } from './levelFormat.js';
+import { triangleGeometry } from './levelBuilder.js';
 
 const MATERIALS = [
   { id: 'cardboard', label: 'Carton' },
@@ -44,15 +45,8 @@ const MIN_SIZE = 0.25, MAX_SIZE = 8;
 const snap = (v) => Math.round(v / SNAP) * SNAP;
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const clone = (o) => JSON.parse(JSON.stringify(o));
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
-function zSpan(layer) {
-  const ids = layer === 'all' ? [0, 1, 2] : Array.isArray(layer) ? layer : [layer];
-  const zs = ids.map((i) => LAYER_Z[i]);
-  const max = Math.max(...zs), min = Math.min(...zs);
-  return { z: (max + min) / 2, depth: max - min + LAYER_DEPTH };
-}
+const zSpan = (layer) => zSpanMask(layer === 'all' ? ALL : 1 << layer);
 
 function setData(item, data) {
   for (const k of Object.keys(item)) delete item[k];
@@ -265,7 +259,7 @@ export class Editor {
   refreshSlots() {
     const store = readStore();
     let draft = null;
-    try { draft = localStorage.getItem(DRAFT); } catch {}
+    try { draft = localStorage.getItem(DRAFT); } catch { /* stockage indisponible : on ignore */ }
     const names = Object.keys(store).sort((a, b) => (store[b].savedAt ?? 0) - (store[a].savedAt ?? 0));
     this.slotsEl.innerHTML =
       (names.length || draft ? '' : '<option value="">(aucune sauvegarde)</option>') +
@@ -295,7 +289,7 @@ export class Editor {
       case 'forget': {
         const key = this.slotsEl.value;
         if (!key) break;
-        if (key === '__draft__') { try { localStorage.removeItem(DRAFT); } catch {} } else {
+        if (key === '__draft__') { try { localStorage.removeItem(DRAFT); } catch { /* stockage indisponible : on ignore */ } } else {
           const store = readStore();
           delete store[key];
           writeStore(STORE, store);
@@ -334,7 +328,7 @@ export class Editor {
 
   exportFile() {
     const name = this.currentName();
-    const blob = new Blob([JSON.stringify(this.builder.toJSON(), null, 1)], { type: 'application/json' });
+    const blob = new Blob([serializeLevel(this.builder.toJSON())], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${name.replace(/[^\w\-àâäéèêëîïôöùûüç ]+/gi, '_').trim() || 'niveau'}.lbw.json`;
@@ -365,7 +359,7 @@ export class Editor {
   saveDraft() {
     clearTimeout(this.draftTimer);
     this.draftTimer = setTimeout(() => {
-      try { localStorage.setItem(DRAFT, JSON.stringify(this.builder.toJSON())); } catch {}
+      try { localStorage.setItem(DRAFT, JSON.stringify(this.builder.toJSON())); } catch { /* stockage indisponible : on ignore */ }
       this.refreshSlots();
     }, 400);
   }

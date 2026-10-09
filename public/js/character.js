@@ -1,7 +1,6 @@
 // Le petit bonhomme en tissu, construit avec des formes simples et animé à la main.
 import * as THREE from 'three';
-
-const damp = (a, b, l, dt) => a + (b - a) * (1 - Math.exp(-l * dt));
+import { damp } from './utils.js';
 
 export class Sackboy {
   constructor(knit) {

@@ -2,32 +2,16 @@
 // Comme dans LittleBigPlanet, le monde a 3 plans de profondeur : 0 = devant, 1 = milieu, 2 = fond.
 import * as THREE from 'three';
 import { flowerTextures, signTexture, skyTexture, hillsTexture } from './textures.js';
+import { LAYER_Z, LAYER_DEPTH, ALL, groupsFor, zSpan, scaleBoxUVs } from './utils.js';
 
-export const LAYER_Z = [1.4, 0, -1.4];
-export const LAYER_DEPTH = 1.3;
-export const ALL = 0b111;
-export const groupsFor = (mask) => (mask << 16) | mask;
+export { LAYER_Z, LAYER_DEPTH, ALL, groupsFor };
 
 const GEM_COLORS = [0xe2574c, 0x4d8ad6, 0x5fb85a, 0xf2c94c, 0xb67ad6];
-
-function zSpan(mask) {
-  const zs = LAYER_Z.filter((_, i) => mask & (1 << i));
-  const max = Math.max(...zs);
-  const min = Math.min(...zs);
-  return { z: (max + min) / 2, depth: max - min + LAYER_DEPTH };
-}
 
 // Boîte dont les UV suivent la taille réelle : la texture garde la même échelle partout.
 function boxGeometry(w, h, d, scale) {
   const geo = new THREE.BoxGeometry(w, h, d);
-  const uv = geo.attributes.uv;
-  const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
-  for (let f = 0; f < 6; f++) {
-    for (let v = 0; v < 4; v++) {
-      const i = f * 4 + v;
-      uv.setXY(i, (uv.getX(i) * dims[f][0]) / scale, (uv.getY(i) * dims[f][1]) / scale);
-    }
-  }
+  scaleBoxUVs(geo.attributes.uv, w, h, d, scale);
   return geo;
 }
 

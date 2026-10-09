@@ -4,6 +4,7 @@ import { createMaterials, knitTexture, dotTexture } from './textures.js';
 import { Level, LAYER_Z, groupsFor, buildLevel1 } from './level.js';
 import { Sackboy } from './character.js';
 import { Sfx } from './audio.js';
+import { Net } from './net.js';
 
 const STEP = 1 / 60;
 const SPEED = 7;
@@ -141,6 +142,7 @@ let lastCollect = -10;
 let runTime = 0;
 let simTime = 0;
 let got = 0;
+let cpIndex = 0;
 const totalBubbles = level.bubbles.length;
 
 // ---------- Entrées clavier / souris / manette ----------
@@ -150,6 +152,7 @@ let mouseGrab = false;
 let pad = null;
 
 addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) return; // saisie du pseudo / du code
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys.add(e.code);
@@ -158,7 +161,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => { keys.clear(); mouseGrab = false; });
 addEventListener('mousedown', (e) => {
-  if (state === 'title') return start();
+  if (state === 'title') { if (!e.target.closest?.('#menu')) start(); return; }
   if (e.button === 0) mouseGrab = true;
 });
 addEventListener('mouseup', (e) => { if (e.button === 0) mouseGrab = false; });
@@ -256,7 +259,7 @@ function toWorld(o, l) {
 function tryGrab(pos) {
   const hand = { x: pos.x + player.facing * 0.6, y: pos.y + 0.05 };
   let best = null, bestD = 0.45;
-  for (const o of level.objects) {
+  for (const o of [...level.objects, ...net.grabTargets()]) {
     if (!o.grabbable || !(o.mask & (1 << player.layer))) continue;
     const l = toLocal(o, hand);
     let cp;
@@ -410,21 +413,20 @@ function gameplayStep() {
 
   if (pos.y < -14) respawn(true);
 
-  for (const cp of level.checkpoints) {
-    if (!cp.active && pos.x > cp.x - 0.5 && Math.abs(pos.y - cp.y) < 6) {
-      level.activateCheckpoint(cp);
-      player.respawn = { x: cp.x, y: cp.y };
-      sfx.checkpoint();
-      toast('Checkpoint !');
+  // On n'avance que vers un checkpoint plus loin (sinon les anciens se réactivaient en boucle)
+  level.checkpoints.forEach((cp, i) => {
+    if (i > cpIndex && pos.x > cp.x - 0.5 && Math.abs(pos.y - cp.y) < 6) {
+      setCheckpoint(i);
+      net.checkpoint(i);
     }
-  }
+  });
 
-  for (const b of level.bubbles) {
-    if (b.collected || b.layer !== player.layer) continue;
+  level.bubbles.forEach((b, i) => {
+    if (b.collected || b.layer !== player.layer) return;
     const k = b.big ? 1.3 : 1;
     const dx = (b.x - pos.x) / (0.8 * k), dy = (b.group.position.y - pos.y) / (1.05 * k);
-    if (dx * dx + dy * dy < 1) collect(b);
-  }
+    if (dx * dx + dy * dy < 1) { collect(b); net.bubble(i); }
+  });
 
   if (state === 'play' && pos.x > level.finishX) finish();
 }
@@ -446,6 +448,28 @@ function collect(b) {
   el.classList.remove('bump');
   void el.offsetWidth;
   el.classList.add('bump');
+}
+
+// Checkpoint atteint (par moi, ou par un autre joueur : by = son pseudo ; null = silencieux)
+function setCheckpoint(i, by) {
+  const cp = level.checkpoints[i];
+  if (!cp || i <= cpIndex) return;
+  cpIndex = i;
+  level.activateCheckpoint(cp);
+  player.respawn = { x: cp.x, y: cp.y };
+  if (by === null) return;
+  sfx.checkpoint();
+  toast(by ? `Checkpoint ! (${by})` : 'Checkpoint !');
+}
+
+// Bulle ramassée par un autre joueur : elle disparaît ici aussi (sans points)
+function remoteCollect(i, by) {
+  const b = level.bubbles[i];
+  if (!b || b.collected) return;
+  b.collected = true;
+  if (by == null) { b.group.visible = false; return; }
+  sfx.pop(0.8);
+  puffs.spawn(b.x, b.group.position.y, b.group.position.z, { n: 6, colors: [b.gem.material.color.getHex(), 0xffffff], speed: 3, size: 0.22 });
 }
 
 function finish() {
@@ -543,6 +567,7 @@ function frame(now) {
       level.savePrev();
       playerStep(STEP);
       level.update(STEP);
+      net.step(STEP);
       world.step();
       simTime += STEP;
       gameplayStep();
@@ -569,6 +594,7 @@ function frame(now) {
     moving: Math.abs(player.input?.x ?? 0) > 0.1,
     grabbing: !!player.grabbed,
   });
+  net.update(dt);
 
   // Caméra
   if (state === 'title') {
@@ -589,6 +615,13 @@ function frame(now) {
   renderer.render(scene, camera);
 }
 
-loading.textContent = 'Entrée ou clic pour jouer';
+// ---------- Réseau (co-op en ligne, voir net.js) ----------
+
+const net = new Net({
+  RAPIER, world, scene, camera, level, player, sack, COSTUMES, EMOTES,
+  hooks: { start, release, toast, getScore: () => score, remoteCollect, setCheckpoint },
+});
+
+loading.textContent = 'Entrée pour jouer en solo, ou choisis ci-dessous';
 loading.classList.add('ready');
 requestAnimationFrame(frame);

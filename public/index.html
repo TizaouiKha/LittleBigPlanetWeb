@@ -27,8 +27,11 @@
       <b>Q/D</b> bouger · <b>Espace</b> sauter · <b>Z/S</b> changer de plan · <b>Shift</b> attraper ·
       <b>1-4</b> émotions · <b>C</b> costume · <b>M</b> musique · <b>R</b> checkpoint
     </div>
+    <div id="players" class="panel hidden"></div>
+    <div id="feed"></div>
     <div id="toast"></div>
     <div id="popups"></div>
+    <div id="tags"></div>
   </div>
 
   <div id="title" class="overlay">
@@ -44,6 +47,18 @@
       </div>
       <p class="pad">🎮 Manette compatible (A sauter, RB attraper, croix haut/bas plans)</p>
       <p id="loading" class="cta">Chargement…</p>
+      <div id="menu">
+        <label class="field">Pseudo <input id="net-name" maxlength="16" placeholder="Sackboy" autocomplete="off" spellcheck="false"></label>
+        <div class="menu-row">
+          <button id="btn-solo" class="btn" disabled>Solo</button>
+          <button id="btn-create" class="btn" disabled>Créer une partie</button>
+        </div>
+        <div class="menu-row">
+          <input id="net-code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
+          <button id="btn-join" class="btn" disabled>Rejoindre</button>
+        </div>
+        <p id="net-status"></p>
+      </div>
     </div>
   </div>
 

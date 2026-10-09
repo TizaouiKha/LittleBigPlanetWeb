@@ -5,5 +5,8 @@
   "description": "Un hommage a LittleBigPlanet jouable dans le navigateur",
   "scripts": {
     "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
   }
 }

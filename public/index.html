@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LittleBigWeb</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="hud" class="hidden">
+    <div id="score" class="panel"><span class="bubble-icon"></span><span id="score-val">0</span></div>
+    <div id="timer" class="panel">00:00</div>
+    <div id="layers" class="panel">
+      <div data-layer="2">Fond</div>
+      <div data-layer="1">Milieu</div>
+      <div data-layer="0">Devant</div>
+    </div>
+    <div id="hint" class="panel">
+      <b>Q/D</b> bouger · <b>Espace</b> sauter · <b>Z/S</b> changer de plan · <b>Shift</b> attraper ·
+      <b>1-4</b> émotions · <b>C</b> costume · <b>M</b> musique · <b>R</b> checkpoint
+    </div>
+    <div id="toast"></div>
+    <div id="popups"></div>
+  </div>
+
+  <div id="title" class="overlay">
+    <div class="card panel">
+      <h1>Little<span>Big</span>Web</h1>
+      <p class="sub">Un monde en carton, en tissu et en éponge</p>
+      <div class="controls">
+        <kbd>Q</kbd><kbd>D</kbd><span>ou les flèches pour bouger</span>
+        <kbd>Espace</kbd><i></i><span>sauter (maintiens pour sauter plus haut)</span>
+        <kbd>Z</kbd><kbd>S</kbd><span>passer au plan du fond / de devant</span>
+        <kbd>Shift</kbd><i></i><span>maintenir pour attraper (ou clic gauche)</span>
+        <kbd>1-4</kbd><i></i><span>émotions · <b>C</b> costume · <b>M</b> musique</span>
+      </div>
+      <p class="pad">🎮 Manette compatible (A sauter, RB attraper, croix haut/bas plans)</p>
+      <p id="loading" class="cta">Chargement…</p>
+    </div>
+  </div>
+
+  <div id="end" class="overlay hidden">
+    <div class="card panel">
+      <h1>Niveau <span>terminé !</span></h1>
+      <div class="stats">
+        <div><small>Score</small><b id="end-score">0</b></div>
+        <div><small>Bulles</small><b id="end-bubbles">0</b></div>
+        <div><small>Temps</small><b id="end-time">00:00</b></div>
+        <div><small>Record</small><b id="end-best">0</b></div>
+      </div>
+      <p class="cta">Entrée pour rejouer</p>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener('error', (e) => {
+      const l = document.getElementById('loading');
+      if (l) l.textContent = 'Erreur : ' + (e.message || 'chargement impossible');
+    });
+  </script>
+  <script type="module" src="js/main.js"
+    onerror="document.getElementById('loading').textContent = 'Impossible de charger le jeu (connexion internet requise pour les librairies).'"></script>
+</body>
+</html>

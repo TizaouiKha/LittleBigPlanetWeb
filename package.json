@@ -1,0 +1,9 @@
+{
+  "name": "littlebigweb",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Un hommage a LittleBigPlanet jouable dans le navigateur",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

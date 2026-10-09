@@ -11,6 +11,9 @@
     "test:e2e": "node tests/e2e.mjs",
     "check": "npm run lint && npm test && npm run test:e2e"
   },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
   "devDependencies": {
     "@dimforge/rapier2d-compat": "0.14.0",
     "@eslint/js": "^9.39.5",

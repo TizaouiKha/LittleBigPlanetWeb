@@ -30,7 +30,7 @@ export default [
   },
   {
     // Serveur (CommonJS) et scripts Node
-    files: ['server.js', '*.cjs'],
+    files: ['server.js', 'server/**/*.js', '*.cjs'],
     languageOptions: { sourceType: 'commonjs', globals: globals.node },
   },
   {

@@ -1,0 +1,140 @@
+/* ---------- Mode création « Popit » : panneaux en carton cousu ---------- */
+
+body.editing #hud > :not(#toast):not(#popups) { display: none; }
+body.editing #game canvas { cursor: none; }
+
+#editor { position: fixed; inset: 0; pointer-events: none; font-size: 14px; }
+#editor .ed-panel, #editor #ed-help { pointer-events: auto; }
+
+.ed-panel {
+  position: absolute;
+  padding: 10px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 238, 205, 0.18) 0 4px, rgba(80, 45, 15, 0.05) 4px 8px),
+    var(--paper);
+}
+
+#editor button {
+  font: 600 13px 'Fredoka', sans-serif;
+  color: var(--ink);
+  background: #fff8e8;
+  border: 2px solid var(--ink);
+  border-radius: 9px;
+  box-shadow: 0 3px 0 var(--ink);
+  padding: 4px 9px;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: transform 0.08s;
+  white-space: nowrap;
+}
+#editor button:hover { transform: translateY(-1px) rotate(-1deg); background: #fff; }
+#editor button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+#editor button.on { background: var(--accent); color: #fff; }
+#editor button:disabled { opacity: 0.4; cursor: default; transform: none; }
+#editor kbd { min-width: 0; padding: 0 5px; font-size: 11px; box-shadow: 0 2px 0 var(--ink); border-width: 1.5px; color: var(--ink); }
+
+.ed-row { display: flex; gap: 6px; }
+.ed-label, #editor h3 {
+  display: block; margin: 0 0 6px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--stitch);
+}
+#editor h3 kbd { text-transform: none; margin-left: 4px; }
+
+/* Outils (gauche) */
+#ed-tools {
+  top: 18px; left: 18px; width: 176px;
+  display: flex; flex-direction: column; gap: 7px;
+  transform: rotate(-0.6deg);
+}
+.ed-logo {
+  font-size: 26px; font-weight: 700; text-align: center; color: var(--accent);
+  -webkit-text-stroke: 1.2px var(--ink); text-shadow: 0 3px 0 var(--ink);
+  margin-bottom: 2px;
+}
+#editor .ed-tool { justify-content: flex-start; }
+#editor .ed-tool kbd { margin-left: auto; }
+#editor .ed-tool.on { background: var(--c); }
+.ed-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--c); border: 2px solid var(--ink); }
+#editor .ed-row button { flex: 1; justify-content: center; }
+#editor .ed-big { justify-content: center; font-size: 17px; padding: 7px; background: var(--gold); margin-top: 4px; }
+#editor [data-act="restart"] { justify-content: center; white-space: normal; }
+
+/* Fichier (droite) */
+#ed-file {
+  top: 18px; right: 18px; width: 230px;
+  display: flex; flex-direction: column; gap: 7px;
+  transform: rotate(0.6deg);
+}
+#editor input, #editor select {
+  font: 600 14px 'Fredoka', sans-serif; color: var(--ink);
+  background: #fff; border: 2px dashed var(--stitch); border-radius: 8px;
+  padding: 4px 8px; min-width: 0; flex: 1;
+}
+#editor select { padding: 3px 4px; font-size: 13px; }
+
+/* Palette (bas) */
+#ed-palette {
+  left: 50%; bottom: 14px; transform: translateX(-50%);
+  display: flex; gap: 14px; align-items: flex-start;
+  max-width: calc(100% - 32px);
+  overflow-x: auto;
+}
+#ed-palette section + section { border-left: 2px dashed rgba(160, 113, 63, 0.5); padding-left: 12px; }
+.ed-grid { display: grid; grid-template-columns: repeat(2, auto); gap: 5px; }
+#ed-palette section:first-child .ed-grid { grid-template-columns: repeat(3, auto); }
+#ed-palette button { padding: 3px 7px; }
+.ed-grid.ed-col { grid-template-columns: auto; }
+#editor .ed-mat, #editor .ed-brush { justify-content: flex-start; }
+#editor .ed-layer kbd, #editor [data-act="playerlayer"] kbd { margin-left: auto; }
+.ed-swatch {
+  width: 20px; height: 20px; border-radius: 5px; border: 2px solid var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+.ed-readout { font-size: 13px; line-height: 1.6; padding: 18px 2px 0; white-space: nowrap; }
+
+/* Petites icônes de formes */
+.ed-shape { display: inline-block; width: 18px; height: 18px; background: #c4925a; border: 2px solid var(--ink); }
+.ed-rect { width: 22px; height: 9px; }
+.ed-circle { border-radius: 50%; }
+.ed-tri { border: none; background: var(--ink); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.ed-bubble, .ed-bigbubble {
+  border-radius: 50%; border-width: 1.5px;
+  background: radial-gradient(circle at 35% 30%, #fff 0 12%, #c6ecff 30%, #7cc6f0 70%, #4a9fd6);
+}
+.ed-bubble { width: 13px; height: 13px; }
+.ed-checkpoint { border-radius: 50%; background: transparent; border: 4px solid #8a3b30; }
+.ed-finish {
+  background: repeating-conic-gradient(var(--ink) 0 25%, #fff 0 50%) 0 0 / 8px 8px;
+}
+
+#ed-help {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+  max-width: min(640px, calc(100% - 470px));
+  padding: 6px 12px; font-size: 12.5px; text-align: center; line-height: 1.5;
+}
+
+/* Curseur Popit */
+#popit-cursor {
+  position: fixed; left: 0; top: 0; pointer-events: none;
+  width: 0; height: 0; opacity: 0;
+}
+#popit-cursor::before, #popit-cursor::after {
+  content: ''; position: absolute; border-radius: 50%;
+}
+#popit-cursor::before {
+  left: -17px; top: -17px; width: 34px; height: 34px;
+  border: 3px dashed #fff; box-shadow: 0 0 0 2px var(--ink), inset 0 0 0 2px var(--ink);
+  animation: popit-spin 6s linear infinite;
+}
+#popit-cursor::after {
+  left: -6px; top: -6px; width: 12px; height: 12px;
+  background: var(--c, #5fb85a); border: 2px solid var(--ink);
+}
+@keyframes popit-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 900px) {
+  #ed-help { display: none; }
+  #ed-tools { width: 150px; }
+  #ed-file { width: 190px; }
+}

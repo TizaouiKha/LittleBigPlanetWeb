@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="editor.css">
   <script type="importmap">
     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
   </script>
@@ -25,7 +26,7 @@
     </div>
     <div id="hint" class="panel">
       <b>Q/D</b> bouger · <b>Espace</b> sauter · <b>Z/S</b> changer de plan · <b>Shift</b> attraper ·
-      <b>1-4</b> émotions · <b>C</b> costume · <b>M</b> musique · <b>R</b> checkpoint
+      <b>1-4</b> émotions · <b>C</b> costume · <b>M</b> musique · <b>R</b> checkpoint · <b>Tab</b> mode création
     </div>
     <div id="toast"></div>
     <div id="popups"></div>
@@ -41,8 +42,9 @@
         <kbd>Z</kbd><kbd>S</kbd><span>passer au plan du fond / de devant</span>
         <kbd>Shift</kbd><i></i><span>maintenir pour attraper (ou clic gauche)</span>
         <kbd>1-4</kbd><i></i><span>émotions · <b>C</b> costume · <b>M</b> musique</span>
+        <kbd>Tab</kbd><i></i><span>mode création (Popit) : construis ton niveau !</span>
       </div>
-      <p class="pad">🎮 Manette compatible (A sauter, RB attraper, croix haut/bas plans)</p>
+      <p class="pad">🎮 Manette compatible (A sauter, RB attraper, croix haut/bas plans, Select création)</p>
       <p id="loading" class="cta">Chargement…</p>
     </div>
   </div>

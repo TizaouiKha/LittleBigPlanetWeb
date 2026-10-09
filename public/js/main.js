@@ -4,6 +4,8 @@ import { createMaterials, knitTexture, dotTexture } from './textures.js';
 import { Level, LAYER_Z, groupsFor, buildLevel1 } from './level.js';
 import { Sackboy } from './character.js';
 import { Sfx } from './audio.js';
+import { LevelBuilder, recordLevel, parseLevel, ensureEditorMaterials } from './levelFormat.js';
+import { Editor } from './editor.js';
 
 const STEP = 1 / 60;
 const SPEED = 7;
@@ -57,12 +59,22 @@ addEventListener('resize', () => {
 
 // ---------- Monde ----------
 
-const mats = createMaterials();
+const mats = ensureEditorMaterials(createMaterials());
 const world = new RAPIER.World({ x: 0, y: GRAVITY });
 world.timestep = STEP;
 const level = new Level(RAPIER, world, scene, mats);
-buildLevel1(level);
-level.activateCheckpoint(level.checkpoints[0]);
+// Le niveau est décrit en données (levelFormat.js) pour pouvoir être édité, sauvé et rechargé.
+const level1Data = recordLevel(buildLevel1, 'Le Jardin en Carton');
+const builder = new LevelBuilder(level);
+builder.load(parseLevel(level1Data).level);
+level.spawn = startPoint();
+
+// Départ : le checkpoint le plus à gauche (activé), sinon le point de départ du niveau.
+function startPoint() {
+  const first = [...level.checkpoints].sort((a, b) => a.x - b.x)[0];
+  if (first) { level.activateCheckpoint(first); first.reached = true; }
+  return first ? { x: first.x, y: first.y } : { ...builder.spawn };
+}
 
 const sfx = new Sfx();
 
@@ -141,7 +153,6 @@ let lastCollect = -10;
 let runTime = 0;
 let simTime = 0;
 let got = 0;
-const totalBubbles = level.bubbles.length;
 
 // ---------- Entrées clavier / souris / manette ----------
 
@@ -150,6 +161,12 @@ let mouseGrab = false;
 let pad = null;
 
 addEventListener('keydown', (e) => {
+  if (e.code === 'Tab') {
+    e.preventDefault();
+    if (!e.repeat) toggleEditor();
+    return;
+  }
+  if (editor.active) return editor.onKeyDown(e);
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.repeat) return;
   keys.add(e.code);
@@ -158,6 +175,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => { keys.clear(); mouseGrab = false; });
 addEventListener('mousedown', (e) => {
+  if (editor.active) return;
   if (state === 'title') return start();
   if (e.button === 0) mouseGrab = true;
 });
@@ -171,7 +189,7 @@ function press(code) {
     return;
   }
   if (state === 'finished') {
-    if (code === 'Enter') location.reload();
+    if (code === 'Enter') restart();
     return;
   }
   switch (code) {
@@ -209,12 +227,14 @@ function pollPad() {
   const s = {
     x: gp.axes[0] ?? 0, jump: b(0), grab: b(4) || b(5) || b(6) || b(7),
     up: b(12) || ay < -0.7, down: b(13) || ay > 0.7,
-    start: b(9), left: b(14), right: b(15), y: b(3),
+    start: b(9), left: b(14), right: b(15), y: b(3), select: b(8),
   };
   const p = pad || {};
   const edge = (k) => s[k] && !p[k];
+  if (edge('select')) toggleEditor();
+  if (editor.active) { pad = s; return; }
   if (state === 'title' && (edge('jump') || edge('start'))) start();
-  else if (state === 'finished' && (edge('start') || edge('jump'))) location.reload();
+  else if (state === 'finished' && (edge('start') || edge('jump'))) restart();
   else if (state === 'play') {
     if (edge('jump')) player.jumpBuf = 0.12;
     if (edge('up')) changeLayer(+1);
@@ -411,7 +431,9 @@ function gameplayStep() {
   if (pos.y < -14) respawn(true);
 
   for (const cp of level.checkpoints) {
-    if (!cp.active && pos.x > cp.x - 0.5 && Math.abs(pos.y - cp.y) < 6) {
+    // (reached : sans ça, deux checkpoints franchis se réactivaient l'un l'autre à chaque pas)
+    if (!cp.active && !cp.reached && pos.x > cp.x - 0.5 && Math.abs(pos.y - cp.y) < 6) {
+      cp.reached = true;
       level.activateCheckpoint(cp);
       player.respawn = { x: cp.x, y: cp.y };
       sfx.checkpoint();
@@ -463,9 +485,9 @@ function finish() {
     best = Math.max(score, Number(localStorage.getItem('lbw-best-1')) || 0);
     localStorage.setItem('lbw-best-1', best);
   } catch { best = score; }
-  setTimeout(() => {
+  endTimer = setTimeout(() => {
     $('end-score').textContent = score;
-    $('end-bubbles').textContent = `${got} / ${totalBubbles}`;
+    $('end-bubbles').textContent = `${got} / ${level.bubbles.length}`;
     $('end-time').textContent = formatTime(runTime);
     $('end-best').textContent = best;
     $('end').classList.remove('hidden');
@@ -521,6 +543,53 @@ function start() {
   toast('C\'est parti !');
 }
 
+// ---------- Mode création (editor.js) ----------
+
+let endTimer = 0;
+
+// « Rejouer depuis le début » : objets remis à zéro, joueur au départ, score effacé.
+function restart() {
+  release();
+  builder.rebuildAll();
+  const sp = startPoint();
+  level.spawn = { ...sp };
+  player.respawn = { ...sp };
+  player.body.setTranslation(sp, true);
+  player.body.setLinvel({ x: 0, y: 0 }, true);
+  player.prev = { ...sp };
+  setLayer(1);
+  player.z = LAYER_Z[1];
+  score = 0; got = 0; combo = 0; runTime = 0; lastCollect = -10;
+  $('score-val').textContent = '0';
+  $('timer').textContent = formatTime(0);
+  clearTimeout(endTimer);
+  $('end').classList.add('hidden');
+  if (state === 'finished') state = 'play';
+  camTarget.set(sp.x + 2, sp.y + 1.4, 0);
+}
+
+function toggleEditor(on = !editor.active) {
+  if (state === 'title' || on === editor.active) return;
+  if (on) {
+    if (state === 'finished') restart();
+    release();
+    keys.clear();
+    mouseGrab = false;
+    player.input = null;
+    editor.enter();
+  } else {
+    editor.exit();
+    acc = 0;
+    toast('C\'est parti !', 900);
+  }
+  sfx.whoosh();
+}
+
+const editor = new Editor({
+  builder, mats, scene, camera, renderer, player, level1: level1Data,
+  hooks: { restart, toast, sfx, exit: () => toggleEditor(false) },
+});
+
 // ---------- Boucle principale ----------
 
 const camTarget = new THREE.Vector3(level.spawn.x + 2, 2.5, 0);
@@ -535,7 +604,8 @@ function frame(now) {
   clock += dt;
   pollPad();
 
-  if (state !== 'title') {
+  // En mode création, la physique est en pause (l'éditeur pilote la caméra).
+  if (state !== 'title' && !editor.active) {
     acc += dt;
     while (acc >= STEP) {
       const p = player.body.translation();
@@ -571,7 +641,11 @@ function frame(now) {
   });
 
   // Caméra
-  if (state === 'title') {
+  let focus = { x: px, y: py };
+  if (editor.active) {
+    editor.update(dt);
+    focus = editor.cam;
+  } else if (state === 'title') {
     camera.position.set(px + 1.5 + Math.sin(clock * 0.3) * 1.5, py + 2.6, 11.5);
     camera.lookAt(px + 1.2, py + 1.2, 0);
   } else {
@@ -581,8 +655,8 @@ function frame(now) {
     camera.position.set(camTarget.x, camTarget.y + 1.3, 14.5);
     camera.lookAt(camTarget.x, camTarget.y, 0);
   }
-  sun.position.set(px + 8, py + 16, 12);
-  sun.target.position.set(px, py, 0);
+  sun.position.set(focus.x + 8, focus.y + 16, 12);
+  sun.target.position.set(focus.x, focus.y, 0);
 
   if (state === 'play') $('timer').textContent = formatTime(runTime);
   updatePopups(dt);

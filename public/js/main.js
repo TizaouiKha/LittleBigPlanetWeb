@@ -4,6 +4,10 @@ import { createMaterials, knitTexture, dotTexture } from './textures.js';
 import { Level, LAYER_Z, groupsFor, buildLevel1 } from './level.js';
 import { Sackboy } from './character.js';
 import { Sfx } from './audio.js';
+import {
+  clamp, damp, approach, toLocal, toWorld, overlapsObject, nextCombo, bubblePoints, bubbleReached,
+  checkpointReached, formatTime, probeGround,
+} from './utils.js';
 
 const STEP = 1 / 60;
 const SPEED = 7;
@@ -13,9 +17,6 @@ const COSTUMES = [0xc9a06a, 0xe0574b, 0x4d8ad6, 0x5fb85a, 0xa874d6, 0xf0c341, 0x
 const EMOTES = ['happy', 'sad', 'angry', 'surprised'];
 
 const $ = (id) => document.getElementById(id);
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const damp = (a, b, l, dt) => a + (b - a) * (1 - Math.exp(-l * dt));
-const approach = (v, t, d) => (v < t ? Math.min(v + d, t) : Math.max(v - d, t));
 
 const loading = $('loading');
 loading.textContent = 'Chargement de la physique…';
@@ -241,17 +242,6 @@ function nextCostume() {
 
 // ---------- Actions du joueur ----------
 
-function toLocal(o, p) {
-  const t = o.body.translation(), a = -o.body.rotation();
-  const dx = p.x - t.x, dy = p.y - t.y;
-  return { x: dx * Math.cos(a) - dy * Math.sin(a), y: dx * Math.sin(a) + dy * Math.cos(a) };
-}
-
-function toWorld(o, l) {
-  const t = o.body.translation(), a = o.body.rotation();
-  return { x: t.x + l.x * Math.cos(a) - l.y * Math.sin(a), y: t.y + l.x * Math.sin(a) + l.y * Math.cos(a) };
-}
-
 // Attraper = créer un pivot physique entre la main et le point le plus proche de l'objet.
 function tryGrab(pos) {
   const hand = { x: pos.x + player.facing * 0.6, y: pos.y + 0.05 };
@@ -283,25 +273,6 @@ function release() {
   player.joint = null;
   player.grabbed = null;
   sfx.release();
-}
-
-function overlapsObject(o, cx, cy, hx, hy) {
-  const t = o.body.translation();
-  if (o.kind === 'ball') {
-    const dx = Math.max(Math.abs(t.x - cx) - hx, 0), dy = Math.max(Math.abs(t.y - cy) - hy, 0);
-    return dx * dx + dy * dy < o.r * o.r;
-  }
-  // Test des axes séparateurs entre la boîte du joueur et la boîte (éventuellement penchée) de l'objet
-  const a = o.body.rotation();
-  const c = Math.cos(a), s = Math.sin(a);
-  const ox = o.w / 2, oy = o.h / 2;
-  const axes = [[1, 0], [0, 1], [c, s], [-s, c]];
-  for (const [nx, ny] of axes) {
-    const pr = hx * Math.abs(nx) + hy * Math.abs(ny);
-    const po = ox * Math.abs(c * nx + s * ny) + oy * Math.abs(-s * nx + c * ny);
-    if (Math.abs((t.x - cx) * nx + (t.y - cy) * ny) > pr + po) return false;
-  }
-  return true;
 }
 
 function changeLayer(dir) {
@@ -346,14 +317,7 @@ function playerStep(dt) {
   const groups = groupsFor(1 << player.layer);
 
   // Sonde au sol : 3 rayons sous les pieds
-  let ground = null;
-  if (vel.y < 4) {
-    for (const ox of [-0.3, 0, 0.3]) {
-      const ray = new RAPIER.Ray({ x: pos.x + ox, y: pos.y }, { x: 0, y: -1 });
-      const hit = world.castRay(ray, 0.95, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, groups, player.collider);
-      if (hit && (hit.timeOfImpact ?? hit.toi) < 0.88) { ground = hit.collider.parent(); break; }
-    }
-  }
+  const ground = vel.y < 4 ? probeGround(RAPIER, world, pos, groups, player.collider) : null;
   const wasGrounded = player.grounded;
   player.grounded = !!ground;
   if (player.grounded && !wasGrounded && player.lastVy < -7) {
@@ -411,7 +375,7 @@ function gameplayStep() {
   if (pos.y < -14) respawn(true);
 
   for (const cp of level.checkpoints) {
-    if (!cp.active && pos.x > cp.x - 0.5 && Math.abs(pos.y - cp.y) < 6) {
+    if (checkpointReached(cp, pos, player.respawn.x)) {
       level.activateCheckpoint(cp);
       player.respawn = { x: cp.x, y: cp.y };
       sfx.checkpoint();
@@ -421,9 +385,7 @@ function gameplayStep() {
 
   for (const b of level.bubbles) {
     if (b.collected || b.layer !== player.layer) continue;
-    const k = b.big ? 1.3 : 1;
-    const dx = (b.x - pos.x) / (0.8 * k), dy = (b.group.position.y - pos.y) / (1.05 * k);
-    if (dx * dx + dy * dy < 1) collect(b);
+    if (bubbleReached(b.x, b.group.position.y, b.big, pos.x, pos.y)) collect(b);
   }
 
   if (state === 'play' && pos.x > level.finishX) finish();
@@ -431,10 +393,9 @@ function gameplayStep() {
 
 function collect(b) {
   b.collected = true;
-  combo = simTime - lastCollect < 0.7 ? combo + 1 : 0;
+  combo = nextCombo(combo, simTime, lastCollect);
   lastCollect = simTime;
-  const mult = 1 + Math.min(Math.floor(combo / 3), 4);
-  const points = (b.big ? 50 : 10) * mult;
+  const { points, mult } = bubblePoints(b.big, combo);
   score += points;
   got++;
   sfx.pop(1 + Math.min(combo, 12) * 0.06);
@@ -507,8 +468,6 @@ function toast(text, ms = 1300) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
-
-const formatTime = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
 function start() {
   if (state !== 'title') return;
@@ -588,6 +547,17 @@ function frame(now) {
   updatePopups(dt);
   renderer.render(scene, camera);
 }
+
+// Hook de test en lecture seule (utilisé par tests/e2e.mjs).
+window.__lbw = {
+  getState() {
+    const p = player.body.translation();
+    return {
+      state, score, combo, got, totalBubbles, runTime,
+      x: p.x, y: p.y, layer: player.layer, grounded: player.grounded, grabbing: !!player.grabbed,
+    };
+  },
+};
 
 loading.textContent = 'Entrée ou clic pour jouer';
 loading.classList.add('ready');
